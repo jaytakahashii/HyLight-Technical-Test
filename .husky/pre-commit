@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+
+cd hylight-map-app
+npx lint-staged
