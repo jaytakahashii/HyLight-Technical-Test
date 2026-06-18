@@ -4,12 +4,14 @@ import { z } from 'zod';
 const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().startsWith('https://'),
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
+  NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN: z.string().startsWith('pk.'),
 });
 
 // Parse and validate the environment variables
 const _env = envSchema.safeParse({
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+  NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN: process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN,
 });
 
 if (!_env.success) {
