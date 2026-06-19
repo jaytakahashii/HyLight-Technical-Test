@@ -15,14 +15,9 @@ import type { MapMouseEvent, MapRef } from 'react-map-gl/mapbox';
 import MapboxMap, { Layer, Source } from 'react-map-gl/mapbox';
 
 type PhotoComment = Database['public']['Tables']['comments']['Row'];
-
 type PhotoMarker = Database['public']['Tables']['photos']['Row'] & { publicUrl: string };
 
-const INITIAL_VIEW_STATE = {
-  longitude: 139.767,
-  latitude: 35.6812,
-  zoom: 11,
-};
+const INITIAL_VIEW_STATE = { longitude: 139.767, latitude: 35.6812, zoom: 11 };
 
 // --- Mapbox Layer Styles ---
 const clusterLayer: CircleLayer = {
@@ -48,9 +43,7 @@ const clusterCountLayer: SymbolLayer = {
     'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
     'text-size': 14,
   },
-  paint: {
-    'text-color': '#ffffff',
-  },
+  paint: { 'text-color': '#ffffff' },
 };
 
 const unclusteredPointLayer: CircleLayer = {
@@ -80,9 +73,9 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
-  // State for the currently selected photo to show in the modal
-  const [selectedPhoto, setSelectedPhoto] = useState<PhotoMarker | null>(null);
+  const [isAIGeneratingEnabled, setIsAIGeneratingEnabled] = useState(true);
 
+  const [selectedPhoto, setSelectedPhoto] = useState<PhotoMarker | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadMarkers = useCallback(async () => {
@@ -90,41 +83,29 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
       .from('photos')
       .select('*')
       .order('created_at', { ascending: false });
-
-    if (error) {
-      throw error;
-    }
-
+    if (error) throw error;
     const nextMarkers: PhotoMarker[] = (data || []).map((photo) => ({
       ...photo,
       publicUrl: supabase.storage.from('photos').getPublicUrl(photo.storage_path).data.publicUrl,
     }));
-
     setMarkers(nextMarkers);
   }, [supabase]);
 
   useEffect(() => {
     let isActive = true;
-
     const initialize = async () => {
       try {
         const { data: userData, error: userError } = await supabase.auth.getUser();
-
         if (userError) throw userError;
-
         if (!isActive) return;
-
         setCurrentUserId(userData.user?.id ?? null);
         setCurrentUserEmail(userData.user?.email ?? null);
-
         if (!userData.user) {
           setMarkers([]);
           setStatusMessage('Sign in to upload photos and load your private feed.');
           return;
         }
-
         await loadMarkers();
-
         if (isActive) setStatusMessage(null);
       } catch (error) {
         console.error('Error loading photos:', error);
@@ -133,9 +114,7 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
         if (isActive) setIsLoading(false);
       }
     };
-
     initialize();
-
     return () => {
       isActive = false;
     };
@@ -166,7 +145,6 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
       setStatusMessage(null);
 
       try {
-        // 1. Extract GPS Data
         setStatusMessage('Extracting location...');
         const gpsData = await exifr.gps(file);
         const latitude = gpsData?.latitude;
@@ -181,29 +159,28 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
         const fileName = `${crypto.randomUUID()}.${fileExt}`;
         const filePath = `${currentUserId}/${fileName}`;
 
-        // 2. Upload to Supabase Storage
         setStatusMessage('Uploading image...');
         const { error: uploadError } = await supabase.storage
           .from('photos')
           .upload(filePath, file, { contentType: file.type, upsert: false });
-
         if (uploadError) throw uploadError;
 
-        // 3. Get Public URL for AI processing
         const publicUrl = supabase.storage.from('photos').getPublicUrl(filePath).data.publicUrl;
 
-        // 4. Generate AI Description via Server Action
-        setStatusMessage('Generating AI description...');
-        const { description } = await generateImageDescription(publicUrl);
+        let aiDescription = null;
+        if (isAIGeneratingEnabled) {
+          setStatusMessage('Generating AI description...');
+          const aiResult = await generateImageDescription(publicUrl);
+          aiDescription = aiResult.description;
+        }
 
-        // 5. Insert into Database
         setStatusMessage('Saving to map...');
         const photoInsert: PhotoInsert = {
           user_id: currentUserId,
           storage_path: filePath,
           latitude,
           longitude,
-          ai_description: description, // Assuming this is defined in your DB schema
+          ai_description: aiDescription,
         };
 
         const { data: savedPhoto, error: dbError } = await supabase
@@ -211,15 +188,9 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
           .insert(photoInsert)
           .select('*')
           .single();
-
         if (dbError) throw dbError;
 
-        // 6. Update UI
-        const newMarker: PhotoMarker = {
-          ...savedPhoto,
-          publicUrl,
-        };
-
+        const newMarker: PhotoMarker = { ...savedPhoto, publicUrl };
         setMarkers((previousMarkers) => [newMarker, ...previousMarkers]);
         setStatusMessage('Photo uploaded successfully.');
       } catch (error) {
@@ -230,60 +201,41 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
     },
-    [currentUserId, supabase]
+    [currentUserId, isAIGeneratingEnabled, supabase]
   );
 
-  // --- GeoJSON Data Processing ---
-  const geoJsonData = useMemo(() => {
-    return {
+  const geoJsonData = useMemo(
+    () => ({
       type: 'FeatureCollection' as const,
       features: markers.map((marker) => ({
         type: 'Feature' as const,
-        properties: {
-          markerId: marker.id,
-        },
-        geometry: {
-          type: 'Point' as const,
-          coordinates: [marker.longitude, marker.latitude],
-        },
+        properties: { markerId: marker.id },
+        geometry: { type: 'Point' as const, coordinates: [marker.longitude, marker.latitude] },
       })),
-    };
-  }, [markers]);
+    }),
+    [markers]
+  );
 
-  // --- Map Interaction Handlers ---
   const onMapClick = useCallback(
     (event: MapMouseEvent) => {
       const features = event.features;
       if (!features || features.length === 0) return;
 
       const feature = features[0];
-
       if (feature.layer?.id === 'clusters') {
         const clusterId = feature.properties?.cluster_id;
-
         const mapboxSource = mapRef.current?.getSource('photos') as GeoJSONSource;
-
         if (mapboxSource && mapboxSource.getClusterExpansionZoom) {
           mapboxSource.getClusterExpansionZoom(clusterId, (err, zoom) => {
-            if (err) return;
-            // ▼ zoom が null または undefined の場合は処理を抜ける（型エラーを解消）
-            if (typeof zoom !== 'number') return;
-
+            if (err || typeof zoom !== 'number') return;
             const geometry = feature.geometry as { type: 'Point'; coordinates: [number, number] };
-
-            mapRef.current?.easeTo({
-              center: geometry.coordinates,
-              zoom,
-              duration: 500,
-            });
+            mapRef.current?.easeTo({ center: geometry.coordinates, zoom, duration: 500 });
           });
         }
       } else if (feature.layer?.id === 'unclustered-point') {
         const markerId = feature.properties?.markerId;
         const clickedPhoto = markers.find((m) => m.id === markerId);
-        if (clickedPhoto) {
-          setSelectedPhoto(clickedPhoto);
-        }
+        if (clickedPhoto) setSelectedPhoto(clickedPhoto);
       }
     },
     [markers]
@@ -306,7 +258,6 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
           onMouseEnter={onMouseEnter}
           onMouseLeave={onMouseLeave}
         >
-          {/* GeoJSON Source for Clustering */}
           <Source
             id="photos"
             type="geojson"
@@ -322,7 +273,6 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
         </MapboxMap>
       </div>
 
-      {/* Info overlay */}
       <div className="pointer-events-none absolute top-4 left-4 z-10 max-w-sm rounded-2xl bg-slate-950/80 px-4 py-3 text-white shadow-2xl backdrop-blur">
         <p className="text-xs font-semibold tracking-[0.35em] text-cyan-300 uppercase">
           HyLight Map
@@ -352,8 +302,21 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
         {statusMessage ? <p className="mt-3 text-sm text-amber-300">{statusMessage}</p> : null}
       </div>
 
-      {/* Upload button */}
-      <div className="absolute right-6 bottom-6 z-10">
+      {/* Upload button & AI Toggle */}
+      <div className="absolute right-6 bottom-6 z-10 flex flex-col items-end gap-3">
+        {currentUserId && (
+          <label className="flex cursor-pointer items-center gap-2 rounded-full bg-slate-900/80 px-4 py-2 text-xs text-slate-300 shadow-xl backdrop-blur transition hover:bg-slate-800">
+            <input
+              type="checkbox"
+              checked={isAIGeneratingEnabled}
+              onChange={(e) => setIsAIGeneratingEnabled(e.target.checked)}
+              className="accent-cyan-500"
+              disabled={isUploading}
+            />
+            <span className="font-medium">Generate AI Description</span>
+          </label>
+        )}
+
         <input
           ref={fileInputRef}
           accept="image/jpeg, image/png, image/webp"
@@ -363,7 +326,7 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
           onChange={handleFileUpload}
         />
         <button
-          className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-2xl transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-full bg-cyan-600 px-6 py-3 text-sm font-bold text-white shadow-2xl transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={isUploading || !currentUserId}
           onClick={() => fileInputRef.current?.click()}
         >
@@ -371,7 +334,6 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
         </button>
       </div>
 
-      {/* Photo Modal Overlay */}
       {selectedPhoto && (
         <PhotoModal
           photo={selectedPhoto}
@@ -386,7 +348,7 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
 }
 
 // ----------------------------------------------------------------------
-// Modal Component for viewing the image and adding comments
+// Modal Component
 // ----------------------------------------------------------------------
 function PhotoModal({
   photo,
@@ -406,10 +368,8 @@ function PhotoModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingComments, setIsLoadingComments] = useState(true);
 
-  // Fetch comments for this specific photo
   useEffect(() => {
     let isActive = true;
-
     const fetchComments = async () => {
       setIsLoadingComments(true);
       const { data, error } = await supabase
@@ -417,18 +377,10 @@ function PhotoModal({
         .select('*')
         .eq('photo_id', photo.id)
         .order('created_at', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching comments:', error);
-      } else if (isActive && data) {
-        setComments(data as PhotoComment[]);
-      }
-
+      if (!error && isActive && data) setComments(data as PhotoComment[]);
       if (isActive) setIsLoadingComments(false);
     };
-
     fetchComments();
-
     return () => {
       isActive = false;
     };
@@ -437,7 +389,6 @@ function PhotoModal({
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || !currentUserId || !currentUserEmail) return;
-
     setIsSubmitting(true);
     try {
       const { data, error } = await supabase
@@ -450,10 +401,7 @@ function PhotoModal({
         })
         .select()
         .single();
-
       if (error) throw error;
-
-      // Optimistically add the new comment to the UI
       if (data) {
         setComments((prev) => [...prev, data as PhotoComment]);
         setNewComment('');
@@ -469,7 +417,6 @@ function PhotoModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm md:p-8">
       <div className="relative flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-slate-900 shadow-2xl md:flex-row">
-        {/* Close Button */}
         <button
           onClick={onClose}
           className="absolute top-4 right-4 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white transition hover:bg-black/80 md:bg-transparent md:text-slate-400 md:hover:bg-slate-800 md:hover:text-white"
@@ -478,7 +425,6 @@ function PhotoModal({
           ✕
         </button>
 
-        {/* Left Side: Image Viewer */}
         <div className="relative flex h-1/2 w-full items-center justify-center bg-black md:h-full md:w-2/3">
           <Image
             src={photo.publicUrl}
@@ -489,11 +435,35 @@ function PhotoModal({
           />
         </div>
 
-        {/* Right Side: Comments Section */}
         <div className="flex h-1/2 w-full flex-col border-t border-slate-800 bg-slate-900 p-6 md:h-full md:w-1/3 md:border-t-0 md:border-l">
+          {/* AI Description Section */}
+          {photo.ai_description && (
+            <div className="mb-6 rounded-xl border border-cyan-900/50 bg-cyan-950/30 p-4">
+              <div className="mb-2 flex items-center gap-2 text-cyan-400">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 2v20" />
+                  <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                </svg>
+                <span className="text-xs font-bold tracking-wider uppercase">AI Description</span>
+              </div>
+              <p className="text-sm leading-relaxed font-medium text-slate-200">
+                {photo.ai_description}
+              </p>
+            </div>
+          )}
+
           <h3 className="mb-4 text-lg font-semibold text-white">Comments</h3>
 
-          {/* Comments List */}
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-2">
             {isLoadingComments ? (
               <p className="text-sm text-slate-400">Loading comments...</p>
@@ -520,7 +490,6 @@ function PhotoModal({
             )}
           </div>
 
-          {/* Comment Form */}
           <div className="mt-4 border-t border-slate-800 pt-4">
             {!currentUserId ? (
               <p className="text-center text-sm text-slate-400">
