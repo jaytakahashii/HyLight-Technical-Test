@@ -15,14 +15,6 @@ type PhotoComment = Database['public']['Tables']['comments']['Row'];
 
 type PhotoMarker = Database['public']['Tables']['photos']['Row'] & { publicUrl: string };
 
-// Define the Comment type based on the DB schema
-type PhotoComment = {
-  id: string;
-  content: string;
-  user_id: string;
-  created_at: string;
-};
-
 const INITIAL_VIEW_STATE = {
   longitude: 139.767,
   latitude: 35.6812,
@@ -49,7 +41,7 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
   const loadMarkers = useCallback(async () => {
     const { data, error } = await supabase
       .from('photos')
-      .select('id, storage_path, latitude, longitude')
+      .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -57,10 +49,7 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
     }
 
     const nextMarkers = data.map((photo) => ({
-      id: photo.id,
-      storagePath: photo.storage_path,
-      latitude: photo.latitude,
-      longitude: photo.longitude,
+      ...photo,
       publicUrl: supabase.storage.from('photos').getPublicUrl(photo.storage_path).data.publicUrl,
     }));
 
@@ -156,16 +145,21 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
         const publicUrl = supabase.storage.from('photos').getPublicUrl(savedPhoto.storage_path)
           .data.publicUrl;
 
-        setMarkers((previousMarkers) => [
-          {
-            id: savedPhoto.id,
-            storagePath: savedPhoto.storage_path,
-            latitude: savedPhoto.latitude,
-            longitude: savedPhoto.longitude,
-            publicUrl,
-          },
-          ...previousMarkers,
-        ]);
+        // Build a PhotoMarker-compatible object. The photos table Row type
+        // requires fields like user_id and created_at; fill with sensible defaults
+        // from the current context.
+        const newMarker: PhotoMarker = {
+          id: savedPhoto.id,
+          user_id: currentUserId as string,
+          storage_path: savedPhoto.storage_path,
+          latitude: savedPhoto.latitude,
+          longitude: savedPhoto.longitude,
+          ai_description: null,
+          created_at: new Date().toISOString(),
+          publicUrl,
+        };
+
+        setMarkers((previousMarkers) => [newMarker, ...previousMarkers]);
 
         setStatusMessage('Photo uploaded successfully.');
       } catch (error) {
