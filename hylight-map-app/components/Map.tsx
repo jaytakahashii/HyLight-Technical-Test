@@ -357,7 +357,7 @@ function PhotoModal({
         <div className="relative flex h-1/2 w-full items-center justify-center bg-black md:h-full md:w-2/3">
           <Image
             src={photo.publicUrl}
-            alt="Expanded photo view"
+            alt={photo.ai_description || 'Expanded photo view'}
             fill
             className="object-contain"
             unoptimized={process.env.NODE_ENV === 'development'}
