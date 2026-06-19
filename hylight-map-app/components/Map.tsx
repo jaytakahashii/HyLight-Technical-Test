@@ -32,6 +32,7 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
   const [isUploading, setIsUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
   // State for the currently selected photo to show in the modal
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoMarker | null>(null);
@@ -68,6 +69,7 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
         if (!isActive) return;
 
         setCurrentUserId(userData.user?.id ?? null);
+        setCurrentUserEmail(userData.user?.email ?? null);
 
         if (!userData.user) {
           setMarkers([]);
@@ -272,6 +274,7 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
         <PhotoModal
           photo={selectedPhoto}
           currentUserId={currentUserId}
+          currentUserEmail={currentUserEmail}
           supabase={supabase}
           onClose={() => setSelectedPhoto(null)}
         />
@@ -286,11 +289,13 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
 function PhotoModal({
   photo,
   currentUserId,
+  currentUserEmail,
   supabase,
   onClose,
 }: {
   photo: PhotoMarker;
   currentUserId: string | null;
+  currentUserEmail: string | null;
   supabase: ReturnType<typeof createClient>;
   onClose: () => void;
 }) {
@@ -329,7 +334,7 @@ function PhotoModal({
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newComment.trim() || !currentUserId) return;
+    if (!newComment.trim() || !currentUserId || !currentUserEmail) return;
 
     setIsSubmitting(true);
     try {
@@ -338,6 +343,7 @@ function PhotoModal({
         .insert({
           photo_id: photo.id,
           user_id: currentUserId,
+          user_email: currentUserEmail,
           content: newComment.trim(),
         })
         .select()
@@ -396,7 +402,11 @@ function PhotoModal({
                 <div key={comment.id} className="rounded-lg bg-slate-800/50 p-3">
                   <div className="mb-1 flex items-center justify-between">
                     <span className="text-xs font-medium text-cyan-400">
-                      {comment.user_id === currentUserId ? 'You' : 'User'}
+                      {comment.user_id === currentUserId
+                        ? 'You'
+                        : comment.user_email
+                          ? comment.user_email.split('@')[0]
+                          : 'User'}
                     </span>
                     <span className="text-[10px] text-slate-500">
                       {new Date(comment.created_at).toLocaleDateString()}
