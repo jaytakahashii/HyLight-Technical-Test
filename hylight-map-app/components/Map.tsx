@@ -93,6 +93,16 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
     };
   }, [loadMarkers, supabase]);
 
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Error signing out:', error);
+      setStatusMessage('Failed to sign out. Please try again.');
+    }
+  };
+
   const handleFileUpload = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -226,7 +236,14 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
             <Link href="/login" className="pointer-events-auto text-cyan-300 hover:text-cyan-200">
               Sign in
             </Link>
-          ) : null}
+          ) : (
+            <button
+              onClick={handleSignOut}
+              className="pointer-events-auto text-amber-400 hover:text-amber-300 hover:underline"
+            >
+              Sign out
+            </button>
+          )}
         </div>
         {statusMessage ? <p className="mt-3 text-sm text-amber-300">{statusMessage}</p> : null}
       </div>
