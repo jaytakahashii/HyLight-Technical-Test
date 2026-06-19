@@ -5,11 +5,13 @@ import { createClient } from '@/lib/supabase/client';
 import type { PhotoInsert } from '@/lib/types/database';
 import type { Database } from '@/lib/types/database.types';
 import exifr from 'exifr';
+import type { CircleLayer, GeoJSONSource, SymbolLayer } from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import MapboxMap, { Marker } from 'react-map-gl/mapbox';
+import type { MapMouseEvent, MapRef } from 'react-map-gl/mapbox';
+import MapboxMap, { Layer, Source } from 'react-map-gl/mapbox';
 
 type PhotoComment = Database['public']['Tables']['comments']['Row'];
 
@@ -21,12 +23,55 @@ const INITIAL_VIEW_STATE = {
   zoom: 11,
 };
 
+// --- Mapbox Layer Styles ---
+const clusterLayer: CircleLayer = {
+  id: 'clusters',
+  type: 'circle',
+  source: 'photos',
+  filter: ['has', 'point_count'],
+  paint: {
+    'circle-color': ['step', ['get', 'point_count'], '#06b6d4', 10, '#3b82f6', 50, '#6366f1'],
+    'circle-radius': ['step', ['get', 'point_count'], 20, 10, 30, 50, 40],
+    'circle-stroke-width': 2,
+    'circle-stroke-color': '#fff',
+  },
+};
+
+const clusterCountLayer: SymbolLayer = {
+  id: 'cluster-count',
+  type: 'symbol',
+  source: 'photos',
+  filter: ['has', 'point_count'],
+  layout: {
+    'text-field': '{point_count_abbreviated}',
+    'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+    'text-size': 14,
+  },
+  paint: {
+    'text-color': '#ffffff',
+  },
+};
+
+const unclusteredPointLayer: CircleLayer = {
+  id: 'unclustered-point',
+  type: 'circle',
+  source: 'photos',
+  filter: ['!', ['has', 'point_count']],
+  paint: {
+    'circle-color': '#06b6d4',
+    'circle-radius': 10,
+    'circle-stroke-width': 3,
+    'circle-stroke-color': '#fff',
+  },
+};
+
 export default function Map() {
   const supabase = useMemo(() => createClient(), []);
   return <MapShell supabase={supabase} />;
 }
 
 function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
+  const mapRef = useRef<MapRef>(null);
   const [markers, setMarkers] = useState<PhotoMarker[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
@@ -149,7 +194,7 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
         const { data: savedPhoto, error: dbError } = await supabase
           .from('photos')
           .insert(photoInsert)
-          .select('id, storage_path, latitude, longitude')
+          .select('*')
           .single();
 
         if (dbError) throw dbError;
@@ -157,22 +202,12 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
         const publicUrl = supabase.storage.from('photos').getPublicUrl(savedPhoto.storage_path)
           .data.publicUrl;
 
-        // Build a PhotoMarker-compatible object. The photos table Row type
-        // requires fields like user_id and created_at; fill with sensible defaults
-        // from the current context.
         const newMarker: PhotoMarker = {
-          id: savedPhoto.id,
-          user_id: currentUserId as string,
-          storage_path: savedPhoto.storage_path,
-          latitude: savedPhoto.latitude,
-          longitude: savedPhoto.longitude,
-          ai_description: null,
-          created_at: new Date().toISOString(),
+          ...savedPhoto,
           publicUrl,
         };
 
         setMarkers((previousMarkers) => [newMarker, ...previousMarkers]);
-
         setStatusMessage('Photo uploaded successfully.');
       } catch (error) {
         console.error('Error uploading photo:', error);
@@ -185,38 +220,92 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
     [currentUserId, supabase]
   );
 
+  // --- GeoJSON Data Processing ---
+  const geoJsonData = useMemo(() => {
+    return {
+      type: 'FeatureCollection' as const,
+      features: markers.map((marker) => ({
+        type: 'Feature' as const,
+        properties: {
+          markerId: marker.id,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [marker.longitude, marker.latitude],
+        },
+      })),
+    };
+  }, [markers]);
+
+  // --- Map Interaction Handlers ---
+  const onMapClick = useCallback(
+    (event: MapMouseEvent) => {
+      const features = event.features;
+      if (!features || features.length === 0) return;
+
+      const feature = features[0];
+
+      if (feature.layer?.id === 'clusters') {
+        const clusterId = feature.properties?.cluster_id;
+
+        const mapboxSource = mapRef.current?.getSource('photos') as GeoJSONSource;
+
+        if (mapboxSource && mapboxSource.getClusterExpansionZoom) {
+          mapboxSource.getClusterExpansionZoom(clusterId, (err, zoom) => {
+            if (err) return;
+            // ▼ zoom が null または undefined の場合は処理を抜ける（型エラーを解消）
+            if (typeof zoom !== 'number') return;
+
+            const geometry = feature.geometry as { type: 'Point'; coordinates: [number, number] };
+
+            mapRef.current?.easeTo({
+              center: geometry.coordinates,
+              zoom,
+              duration: 500,
+            });
+          });
+        }
+      } else if (feature.layer?.id === 'unclustered-point') {
+        const markerId = feature.properties?.markerId;
+        const clickedPhoto = markers.find((m) => m.id === markerId);
+        if (clickedPhoto) {
+          setSelectedPhoto(clickedPhoto);
+        }
+      }
+    },
+    [markers]
+  );
+
+  const onMouseEnter = useCallback(() => (document.body.style.cursor = 'pointer'), []);
+  const onMouseLeave = useCallback(() => (document.body.style.cursor = ''), []);
+
   return (
     <div className="relative h-screen w-full overflow-hidden bg-slate-950">
       <div className="h-full w-full">
         <MapboxMap
+          ref={mapRef}
           initialViewState={INITIAL_VIEW_STATE}
           mapStyle="mapbox://styles/mapbox/streets-v12"
           mapboxAccessToken={env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}
           style={{ width: '100%', height: '100%' }}
+          interactiveLayerIds={['clusters', 'unclustered-point']}
+          onClick={onMapClick}
+          onMouseEnter={onMouseEnter}
+          onMouseLeave={onMouseLeave}
         >
-          {markers.map((marker) => (
-            <Marker
-              anchor="bottom"
-              key={marker.id}
-              latitude={marker.latitude}
-              longitude={marker.longitude}
-              // Prevent map click events from firing when clicking the marker
-              onClick={(e) => {
-                e.originalEvent.stopPropagation();
-                setSelectedPhoto(marker);
-              }}
-            >
-              <div className="group relative h-12 w-12 cursor-pointer overflow-hidden rounded-full border-2 border-white/90 shadow-xl ring-2 ring-slate-950/20 transition-transform duration-200 hover:scale-110">
-                <Image
-                  alt="Geotagged photo marker"
-                  className="object-cover"
-                  fill
-                  src={marker.publicUrl}
-                  unoptimized={process.env.NODE_ENV === 'development'}
-                />
-              </div>
-            </Marker>
-          ))}
+          {/* GeoJSON Source for Clustering */}
+          <Source
+            id="photos"
+            type="geojson"
+            data={geoJsonData}
+            cluster={true}
+            clusterMaxZoom={14}
+            clusterRadius={50}
+          >
+            <Layer {...clusterLayer} />
+            <Layer {...clusterCountLayer} />
+            <Layer {...unclusteredPointLayer} />
+          </Source>
         </MapboxMap>
       </div>
 
