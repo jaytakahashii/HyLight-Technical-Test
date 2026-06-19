@@ -7,6 +7,9 @@ CREATE TABLE photos (
   ai_description TEXT,
   created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
+
+CREATE INDEX photos_user_id_idx ON public.photos (user_id);
+
 -- Enable Row Level Security (RLS) for the photos table
 ALTER TABLE photos ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Photos are viewable by authenticated users" ON photos FOR
