@@ -12,3 +12,7 @@ SELECT TO authenticated USING (true);
 CREATE POLICY "Users can insert their own comments" ON comments FOR
 INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can delete their own comments" ON comments FOR DELETE TO authenticated USING (auth.uid() = user_id);
+-- Grant base permissions to API roles (actual access is controlled by RLS)
+GRANT ALL ON TABLE public.comments TO anon,
+  authenticated,
+  service_role;
