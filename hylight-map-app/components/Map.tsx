@@ -3,6 +3,7 @@
 import { env } from '@/lib/env';
 import { createClient } from '@/lib/supabase/client';
 import type { PhotoInsert } from '@/lib/types/database';
+import type { Database } from '@/lib/types/database.types';
 import exifr from 'exifr';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import Image from 'next/image';
@@ -10,13 +11,9 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MapboxMap, { Marker } from 'react-map-gl/mapbox';
 
-type PhotoMarker = {
-  id: string;
-  storagePath: string;
-  latitude: number;
-  longitude: number;
-  publicUrl: string;
-};
+type PhotoComment = Database['public']['Tables']['comments']['Row'];
+
+type PhotoMarker = Database['public']['Tables']['photos']['Row'] & { publicUrl: string };
 
 const INITIAL_VIEW_STATE = {
   longitude: 139.767,
