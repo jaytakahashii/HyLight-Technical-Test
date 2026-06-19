@@ -1,5 +1,6 @@
 'use client';
 
+import { generateImageDescription } from '@/app/actions/ai';
 import { env } from '@/lib/env';
 import { createClient } from '@/lib/supabase/client';
 import type { PhotoInsert } from '@/lib/types/database';
@@ -165,6 +166,8 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
       setStatusMessage(null);
 
       try {
+        // 1. Extract GPS Data
+        setStatusMessage('Extracting location...');
         const gpsData = await exifr.gps(file);
         const latitude = gpsData?.latitude;
         const longitude = gpsData?.longitude;
@@ -178,17 +181,29 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
         const fileName = `${crypto.randomUUID()}.${fileExt}`;
         const filePath = `${currentUserId}/${fileName}`;
 
+        // 2. Upload to Supabase Storage
+        setStatusMessage('Uploading image...');
         const { error: uploadError } = await supabase.storage
           .from('photos')
           .upload(filePath, file, { contentType: file.type, upsert: false });
 
         if (uploadError) throw uploadError;
 
+        // 3. Get Public URL for AI processing
+        const publicUrl = supabase.storage.from('photos').getPublicUrl(filePath).data.publicUrl;
+
+        // 4. Generate AI Description via Server Action
+        setStatusMessage('Generating AI description...');
+        const { description } = await generateImageDescription(publicUrl);
+
+        // 5. Insert into Database
+        setStatusMessage('Saving to map...');
         const photoInsert: PhotoInsert = {
           user_id: currentUserId,
           storage_path: filePath,
           latitude,
           longitude,
+          ai_description: description, // Assuming this is defined in your DB schema
         };
 
         const { data: savedPhoto, error: dbError } = await supabase
@@ -199,9 +214,7 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
 
         if (dbError) throw dbError;
 
-        const publicUrl = supabase.storage.from('photos').getPublicUrl(savedPhoto.storage_path)
-          .data.publicUrl;
-
+        // 6. Update UI
         const newMarker: PhotoMarker = {
           ...savedPhoto,
           publicUrl,
