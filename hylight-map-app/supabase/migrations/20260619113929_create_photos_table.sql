@@ -18,6 +18,5 @@ CREATE POLICY "Users can insert their own photos" ON photos FOR
 INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can delete their own photos" ON photos FOR DELETE TO authenticated USING (auth.uid() = user_id);
 -- Grant base permissions to API roles (actual access is controlled by RLS)
-GRANT ALL ON TABLE public.photos TO anon,
-  authenticated,
-  service_role;
+GRANT SELECT, INSERT, DELETE ON TABLE public.photos TO authenticated;
+GRANT ALL ON TABLE public.photos TO service_role;
