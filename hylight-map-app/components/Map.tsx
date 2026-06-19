@@ -48,7 +48,7 @@ function MapShell({ supabase }: { supabase: ReturnType<typeof createClient> }) {
       throw error;
     }
 
-    const nextMarkers = data.map((photo) => ({
+    const nextMarkers: PhotoMarker[] = (data || []).map((photo) => ({
       ...photo,
       publicUrl: supabase.storage.from('photos').getPublicUrl(photo.storage_path).data.publicUrl,
     }));
