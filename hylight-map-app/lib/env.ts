@@ -2,7 +2,10 @@ import { z } from 'zod';
 
 // Define the schema for environment variables
 const envSchema = z.object({
-  NEXT_PUBLIC_SUPABASE_URL: z.string().startsWith('https://'),
+  // Allow both http (local) and https (production)
+  NEXT_PUBLIC_SUPABASE_URL: z.string().regex(/^https?:\/\//, {
+    message: 'Must be a valid HTTP or HTTPS URL',
+  }),
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
   NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN: z.string().startsWith('pk.'),
 });
