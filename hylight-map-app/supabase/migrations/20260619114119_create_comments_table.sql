@@ -5,6 +5,10 @@ CREATE TABLE comments (
   content TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
+
+CREATE INDEX comments_photo_id_idx ON public.comments (photo_id);
+CREATE INDEX comments_user_id_idx ON public.comments (user_id);
+
 -- Enable Row Level Security (RLS) for the comments table
 ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Comments are viewable by authenticated users" ON comments FOR
