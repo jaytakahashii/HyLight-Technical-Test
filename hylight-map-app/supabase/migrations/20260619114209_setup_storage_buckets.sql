@@ -1,0 +1,14 @@
+-- Create a storage bucket for photos
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('photos', 'photos', true) ON CONFLICT DO NOTHING;
+
+DROP POLICY IF EXISTS "Public Access for photos bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated users can upload photos" ON storage.objects;
+
+CREATE POLICY "Public Access for photos bucket" ON storage.objects FOR
+SELECT USING (bucket_id = 'photos');
+CREATE POLICY "Authenticated users can upload photos" ON storage.objects FOR
+INSERT TO authenticated WITH CHECK (
+    bucket_id = 'photos'
+    AND auth.uid() = owner
+  );
