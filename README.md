@@ -2,7 +2,7 @@
 
 A full-stack web application built for the HyLight Technical Test. It allows users to sign up, upload geotagged photos, display them on an interactive Mapbox map, and add comments. It also features an AI integration that automatically generates a description of the uploaded image.
 
-> **Note:** For the detailed technical architecture, trade-offs, and project plan (The Strategist), please see the [Notion Document](https://rocky-radon-069.notion.site/hylight-technical-test?pvs=73)
+> **Note:** For the detailed technical architecture, trade-offs, and project plan (The Strategist), please see the [Notion Document](https://rocky-radon-069.notion.site/hylight-technical-test?pvs=73) _(<- Replace with your actual Notion link)_.
 
 ## 🚀 Features
 
