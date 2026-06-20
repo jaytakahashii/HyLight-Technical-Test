@@ -29,12 +29,12 @@ sequenceDiagram
     Client->>Client: 2. Extracts GPS (exifr)
     Client->>SupabaseStorage: 3. Uploads file securely
     SupabaseStorage-->>Client: Returns Public URL
-    Client->>Server: 4. Triggers AI generation (optional)
+    Client->>Server: 4. Triggers AI & Save Data (URL, GPS)
     Server->>Gemini: Sends Image URL securely
     Gemini-->>Server: Returns AI Description
-    Server-->>Client: Returns AI Description
-    Client->>DB: 5. Inserts Photo Data (URL, GPS, AI Text)
-    DB-->>Client: Confirms Insert
+    Server->>DB: 5. Inserts Photo Data (URL, GPS, AI Text)
+    DB-->>Server: Confirms Insert
+    Server-->>Client: Returns Success & New Data
     Client->>Client: 6. Updates Mapbox rendering
 ```
 
